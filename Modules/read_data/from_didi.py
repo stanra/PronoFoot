@@ -1,41 +1,33 @@
 import xlrd
-from db_client import model
+import db_model as model
+import dateparser
+import re
 
+def read_season(file, comp_name, year):
 
-def read_season(file, comp_name, year, country, nb_participants):
-    competition = model.Document(name=comp_name, year=year, country=country)
-    # todo : add comptetion in the competitions collection
+    competitions = model.Collection('competitions')
+    competitions.append(model.Document('competition', name=comp_name, year=year, participants=['non', 'implemented']))
 
     xls_file = xlrd.open_workbook(file)
     sheet = xls_file.sheet_by_name('Pronos')
 
+    participants = find_participants(sheet)
 
-    # to do : all match day in same collection right ?
-    match_day = read_day(sheet, day, nb_participants, comp_name);
-
+    all_matches = model.Collection('matches')
     for day in range(1, 39):
-        match_day = read_day(sheet, day)
+        read_day(sheet, comp_name, day, participants, all_matches)
+
+    return competitions, all_matches
 
 
-def read_day(sheet, day, nb_participants, competition):
+def read_day(sheet, competition, day, participants, collection):
 
-    line = 4 + (day-1)*(10+3)
+    line = 4 + (day-1)*(10+4)
 
     temp = sheet.cell(rowx=line,colx=0).value
 
-    if not temp:
-        return False
-
-    _, date = temp.split(' : ')
-
-    line = line+2
-    participants = []
-    for i in range(0,nb_participants):
-        col = 4 + i * 2
-        participants.append(sheet.cell(rowx=line, colx=col).value)
-
-
-    all_matches = model.Collection('matches')
+    _, date = re.split(r'[ ]*[,:][ ]*',temp)
+    line += 2
 
     for line in range(line+1, line+11):
         teamA = sheet.cell(rowx=line, colx=0).value
@@ -43,22 +35,59 @@ def read_day(sheet, day, nb_participants, competition):
         teamA_goals = sheet.cell(rowx=line, colx=1).value
         teamB_goals = sheet.cell(rowx=line, colx=2).value
 
-        match = model.Document(teamA=teamA, teamB=teamB, teamA_goals=teamA_goals, teamB_goals=teamB_goals,
-                               day=day, date=date, pronos={}, competition=competition)
+        match = model.Document('match', team_A=teamA, team_B=teamB, home=teamA,
+                               day=day, date=dateparser.parse(date), pronos=[], competition=competition,
+                               result=model.Document(
+                                   'result', team_A_goals=int(teamA_goals), team_B_goals=int(teamB_goals))
+                               )
 
         for i,par in enumerate(participants):
             col = 4 + i * 2
-            prono = model.Document(teamA_goals = sheet.cell(rowx=line, colx=col),
-                                   teamB_goals = sheet.cell(rowx=line, colx=col+1) )
-            match['pronos'][par] = prono
 
-        all_matches.add(match)
+            try:
+                teamA_goals = int(sheet.cell(rowx=line, colx=col).value)
+            except ValueError:
+                teamA_goals = None
+            try:
+                teamB_goals = int(sheet.cell(rowx=line, colx=col).value)
+            except ValueError:
+                teamB_goals = None
 
-        return all_matches
+            prono = model.Document('prono', participant_name = par,
+                                   team_A_goals = teamA_goals,
+                                   team_B_goals = teamB_goals )
+            match['pronos'].append(prono)
 
-        # TODO : add the match in the 'matches' collection
+        collection.append(match)
 
-# Todo : figure by myself what is the number of participants ?
+def find_participants(sheet):
+    participants = []
+    line = 6
+    col = 4
+    while True:
+        par = sheet.cell(rowx=line, colx=col).value
+        if not par:
+            break
+        participants.append(par)
+        col += 2
+    return participants
+
+
+
+if __name__ == '__main__':
+    folder = 'C:\\Users\\stanr\\Documents\\Projects\\PronoFoot\\Data\\Family Pronos\\Pronostics_L1_Saison_'
+    seasons = ['2011-2012', '2012-2013', '2013-2014', '2014-2015', '2015-2016']
+
+    files = [ folder + season + '.xls' for season in seasons ]
+    competitions = [ 'Ligue 1 ' + season for season in seasons ]
+    years = list(range(2011,2016))
+    participants = [5,6,9,9,9]
+
+    for file, competition, year, nb_participants in zip(files, competitions, years, participants):
+        comp, matches = read_season(file, competition, year)
+        #comp_d = comp.save(output=False, in_db='test_didi_2')
+        #matches_d = matches.save(output=True, in_db='test_didi_2')
+
 
 
 
