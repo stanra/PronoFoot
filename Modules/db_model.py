@@ -144,7 +144,7 @@ expected_fields = {
         'day': (str, int)
     },
     'prono': {
-        'participant_name': str,
+            'participant_name': str,
         'team_A_goals': (int,type(None)),
         'team_B_goals': (int, type(None))
     },
